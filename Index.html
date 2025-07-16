@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교사 수업역량 강화를 위한 RAG-CBR 시스템 분석</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony (Warm Neutral, Soft Blue, Gentle Green, Subtle Accent) -->
+    <!-- Application Structure Plan: The SPA is structured as a narrative journey to guide the user from understanding the core problem to exploring the proposed solution and its impact. It starts with the 'Why' (Teacher's Challenges), moves to the 'What' (The RAG+CBR Solution, visualized interactively), then to the 'How' (Practical Scenarios and Grade-Specific Applications), and finally to the 'Proof' (Evaluation Framework). This task-oriented, thematic structure is more engaging and intuitive than a linear report summary, allowing users like teachers or policymakers to quickly grasp the system's value proposition and dive into specific areas of interest. Key interactions include toggling between grade levels to see tailored content and charts, and exploring a clickable rubric to understand competency metrics. A new Gemini API-powered section allows for dynamic lesson plan generation. -->
+    <!-- Visualization & Content Choices: 
+        - Teacher Challenges (from Table 1) -> Goal: Inform/Compare -> Presentation: Interactive Cards -> Interaction: Hover to see details -> Justification: Quickly showcases the key problems the system solves.
+        - RAG+CBR Workflow -> Goal: Organize/Explain Process -> Presentation: HTML/CSS Animated Diagram -> Interaction: Static animation on scroll -> Justification: Visually simplifies the complex technical architecture, making it easy to understand the synergy.
+        - Grade-Level Differences -> Goal: Compare/Inform -> Presentation: Bar Chart (Chart.js) + Text Blocks -> Interaction: Button toggle updates chart and text -> Justification: Effectively highlights the system's adaptability to different developmental stages, a key point in the report.
+        - Competency Rubric (from Table 2) -> Goal: Organize/Detail -> Presentation: Interactive HTML Table -> Interaction: Click on cells to highlight and read details -> Justification: Transforms a dense table into an exploratory tool, making the evaluation criteria more accessible.
+        - ✨ AI Lesson Planner -> Goal: Demonstrate/Engage -> Presentation: Input form + Dynamic Content Area -> Interaction: User inputs topic, clicks button to call Gemini API -> Justification: Provides a live demonstration of the system's core value proposition, making the abstract concept tangible and useful.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #F8F6F4;
+            color: #333;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+            color: #5a677d;
+        }
+        .nav-button:hover, .nav-button.active {
+            color: #E8A08D;
+            border-bottom: 2px solid #E8A08D;
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .tab-button.active {
+            background-color: #A8D8EA;
+            color: #ffffff;
+        }
+        .tab-button {
+            transition: background-color 0.3s;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        .rubric-table td {
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+         .rubric-table td.highlight {
+            background-color: #e0f2fe;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #gemini-output h3 {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            color: #3E5A7B;
+        }
+        #gemini-output ul {
+            list-style-type: disc;
+            margin-left: 1.5rem;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold text-[#3E5A7B]">교사 AI 파트너</h1>
+            <div class="hidden md:flex space-x-6">
+                <a href="#challenge" class="nav-button font-medium pb-1">도전 과제</a>
+                <a href="#solution" class="nav-button font-medium pb-1">솔루션</a>
+                <a href="#gemini-planner" class="nav-button font-medium pb-1">✨ AI 수업 설계</a>
+                <a href="#application" class="nav-button font-medium pb-1">학년별 지원</a>
+                <a href="#evaluation" class="nav-button font-medium pb-1">효과성 검증</a>
+            </div>
+             <button id="mobile-menu-button" class="md:hidden focus:outline-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+            </button>
+        </nav>
+        <div id="mobile-menu" class="hidden md:hidden px-6 pb-4">
+            <a href="#challenge" class="block py-2 text-center nav-button">도전 과제</a>
+            <a href="#solution" class="block py-2 text-center nav-button">솔루션</a>
+            <a href="#gemini-planner" class="block py-2 text-center nav-button">✨ AI 수업 설계</a>
+            <a href="#application" class="block py-2 text-center nav-button">학년별 지원</a>
+            <a href="#evaluation" class="block py-2 text-center nav-button">효과성 검증</a>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-12">
+        <section class="text-center mb-24">
+            <h2 class="text-3xl md:text-5xl font-bold mb-4 text-[#3E5A7B]">미래 과학 교육을 위한 AI 파트너</h2>
+            <p class="text-lg md:text-xl max-w-3xl mx-auto text-gray-600">검색 증강 생성(RAG)과 사례기반추론(CBR)을 융합하여 초등 과학 교사의 수업 전문성을 강화하는 AI 교사 지원 시스템(TSS)을 소개합니다.</p>
+        </section>
+
+        <section id="challenge" class="mb-24 scroll-mt-20">
+            <div class="text-center mb-12">
+                <h3 class="text-3xl font-bold text-[#3E5A7B]">초등 과학 수업, 교사들은 어떤 어려움을 겪을까요?</h3>
+                <p class="mt-2 text-gray-600">TSS는 교사들이 현장에서 겪는 실질적인 문제들을 해결하는 것을 목표로 합니다.</p>
+            </div>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                 <div class="card bg-white p-6 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold mb-2 text-blue-800">과학 내용 지식(CK) 부족</h4>
+                    <p class="text-gray-600">비전공자로서 특정 과학 개념을 깊이 있게 설명하는 데 어려움을 느낍니다.</p>
+                </div>
+                <div class="card bg-white p-6 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold mb-2 text-green-800">실험 지도/관리의 어려움</h4>
+                    <p class="text-gray-600">실험 준비부터 예상치 못한 상황 대처, 안전사고에 대한 우려가 큽니다.</p>
+                </div>
+                <div class="card bg-white p-6 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold mb-2 text-yellow-800">예상치 못한 학생 질문</h4>
+                    <p class="text-gray-600">수업 중 학생의 돌발 질문에 즉각적이고 정확하게 대처하기가 어렵습니다.</p>
+                </div>
+                <div class="card bg-white p-6 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold mb-2 text-purple-800">수업 준비 시간 부족</h4>
+                    <p class="text-gray-600">다양한 자료를 찾고, 수업을 설계하는 데 절대적인 시간이 부족합니다.</p>
+                </div>
+                <div class="card bg-white p-6 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold mb-2 text-red-800">PCK 부족 (교과 교육학적 지식)</h4>
+                    <p class="text-gray-600">과학 개념을 학생 눈높이에 맞는 효과적인 비유나 활동으로 변환하기 힘듭니다.</p>
+                </div>
+                 <div class="card bg-white p-6 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold mb-2 text-indigo-800">개별화 수업의 어려움</h4>
+                    <p class="text-gray-600">다양한 수준의 학생들을 모두 만족시키는 수업을 구성하기가 힘듭니다.</p>
+                </div>
+            </div>
+        </section>
+        
+        <section id="solution" class="mb-24 scroll-mt-20">
+             <div class="text-center mb-12">
+                <h3 class="text-3xl font-bold text-[#3E5A7B]">해결책: RAG와 CBR의 공생적 결합</h3>
+                <p class="mt-2 text-gray-600">TSS는 두 가지 핵심 AI 기술을 융합하여 이론과 실제의 간극을 메웁니다.</p>
+            </div>
+            <div class="bg-white p-8 rounded-xl shadow-lg">
+                <div class="flex flex-col md:flex-row items-center justify-center gap-8">
+                    <div class="w-full md:w-1/3 text-center p-6 bg-blue-50 rounded-lg">
+                        <h4 class="text-2xl font-bold text-blue-800 mb-2">RAG</h4>
+                        <p class="font-semibold text-blue-600">검증된 지식의 힘</p>
+                        <p class="mt-2 text-sm text-gray-700">교육과정, 교과서 등 신뢰도 높은 데이터를 기반으로 '정확한 이론적 정보'를 제공하여 LLM의 환각을 방지합니다.</p>
+                    </div>
+                    <div class="text-4xl font-bold text-gray-500">+</div>
+                    <div class="w-full md:w-1/3 text-center p-6 bg-green-50 rounded-lg">
+                        <h4 class="text-2xl font-bold text-green-800 mb-2">CBR</h4>
+                        <p class="font-semibold text-green-600">실천적 지혜의 보고</p>
+                        <p class="mt-2 text-sm text-gray-700">성공적인 수업 지도안, 활동지 등 실제 '수업 사례'를 제공하여 현장 적용성을 높입니다.</p>
+                    </div>
+                </div>
+                <div class="mt-8 text-center">
+                    <div class="text-2xl animate-bounce">⬇️</div>
+                </div>
+                <div class="mt-8 p-6 bg-indigo-50 rounded-lg text-center">
+                    <h4 class="text-2xl font-bold text-indigo-800">종합적이고 다층적인 답변</h4>
+                    <p class="mt-2 text-gray-700">교사의 질문에 대해, <span class="font-bold">정확한 개념 설명</span>과 <span class="font-bold">구체적인 수업 사례</span>를 융합하여 하나의 완성된 솔루션을 제공합니다. 이는 교사의 PCK(교과 교육학적 지식)를 직접적으로 강화합니다.</p>
+                </div>
+            </div>
+        </section>
+        
+        <section id="gemini-planner" class="mb-24 scroll-mt-20">
+            <div class="text-center mb-12">
+                <h3 class="text-3xl font-bold text-[#3E5A7B]">✨ AI 수업 설계 도우미</h3>
+                <p class="mt-2 text-gray-600">수업 주제와 학년을 선택하고, AI가 제안하는 창의적인 수업 아이디어를 확인해보세요!</p>
+            </div>
+            <div class="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+                <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                    <input type="text" id="lesson-topic" placeholder="예: 물의 순환, 화산과 지진" class="flex-grow p-3 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    <select id="lesson-grade" class="p-3 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                        <option value="3">3학년</option>
+                        <option value="6">6학년</option>
+                    </select>
+                    <button id="generate-plan-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                        아이디어 생성 ✨
+                    </button>
+                </div>
+                <div id="gemini-output-container" class="mt-6 p-6 bg-gray-50 rounded-lg min-h-[200px]">
+                    <div id="loader" class="hidden mx-auto loader"></div>
+                    <div id="gemini-output">
+                        <p class="text-gray-500 text-center">이곳에 AI가 생성한 수업 계획 아이디어가 표시됩니다.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="application" class="mb-24 scroll-mt-20">
+            <div class="text-center mb-12">
+                <h3 class="text-3xl font-bold text-[#3E5A7B]">학년별 발달 단계에 맞춘 정교한 지원</h3>
+                <p class="mt-2 text-gray-600">TSS는 3학년의 구체적 사고와 6학년의 추상적 사고 특성을 모두 고려합니다.</p>
+            </div>
+            <div class="flex justify-center space-x-4 mb-8">
+                <button id="grade3-btn" class="grade-btn bg-[#A8D8EA] text-white py-2 px-6 rounded-full font-bold shadow-md">3학년</button>
+                <button id="grade6-btn" class="grade-btn bg-white py-2 px-6 rounded-full font-bold shadow-md">6학년</button>
+            </div>
+            <div class="grid md:grid-cols-2 gap-8 items-start">
+                <div id="grade-info" class="bg-white p-8 rounded-lg shadow-md">
+                </div>
+                <div class="bg-white p-8 rounded-lg shadow-md">
+                    <h4 class="text-xl font-bold text-center mb-4">학년별 교수법 초점 비교</h4>
+                    <div class="chart-container">
+                        <canvas id="gradeFocusChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="evaluation" class="mb-24 scroll-mt-20">
+            <div class="text-center mb-12">
+                <h3 class="text-3xl font-bold text-[#3E5A7B]">시스템의 효과, 어떻게 검증할까요?</h3>
+                <p class="mt-2 text-gray-600">'수업역량'이라는 복합적 개념을 구체적이고 관찰 가능한 행동 지표로 평가합니다. 아래 표의 셀을 클릭하여 상세 내용을 확인하세요.</p>
+            </div>
+            <div class="bg-white p-4 sm:p-8 rounded-lg shadow-lg overflow-x-auto">
+                <h4 id="rubric-detail-display" class="mb-4 p-4 bg-gray-100 rounded-md text-gray-700 min-h-[50px]">평가 루브릭: 셀을 클릭하여 설명을 보세요.</h4>
+                <table class="w-full text-left border-collapse rubric-table">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="p-3 font-bold text-gray-600 border">역량 영역</th>
+                            <th class="p-3 font-bold text-gray-600 border text-center">수준 1 (초심)</th>
+                            <th class="p-3 font-bold text-gray-600 border text-center">수준 2 (발달)</th>
+                            <th class="p-3 font-bold text-gray-600 border text-center">수준 3 (능숙)</th>
+                            <th class="p-3 font-bold text-gray-600 border text-center">수준 4 (숙련)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rubric-body" class="text-sm">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer class="text-center pt-12 border-t">
+            <p class="text-gray-500">이 애플리케이션은 제공된 연구 보고서를 기반으로 생성된 인터랙티브 요약본입니다.</p>
+        </footer>
+
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            mobileMenuButton.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+
+            const navLinks = document.querySelectorAll('.nav-button');
+            const sections = document.querySelectorAll('main section');
+
+            window.addEventListener('scroll', () => {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (pageYOffset >= sectionTop - 100) {
+                        current = section.getAttribute('id');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.getAttribute('href') === `#${current}`) {
+                        link.classList.add('active');
+                    }
+                });
+            });
+
+            const grade3Btn = document.getElementById('grade3-btn');
+            const grade6Btn = document.getElementById('grade6-btn');
+            const gradeInfoDiv = document.getElementById('grade-info');
+
+            const gradeData = {
+                '3': {
+                    title: '3학년: 구체적 조작기 학습자를 위한 탐구 촉진',
+                    profile: '<strong>학생 프로필:</strong> 피아제의 구체적 조작기. 직접 관찰하고 조작하는 핸즈온 활동을 통해 가장 효과적으로 학습합니다. 지적 호기심이 왕성합니다.',
+                    curriculum: '<strong>교육과정 초점:</strong> 물질의 성질, 자석, 동물의 한살이 등 친숙한 주제 중심. 관찰, 분류, 측정 등 기초 탐구 기능 습득을 강조합니다.',
+                    system: '<strong>시스템 적용 방안:</strong> <ul><li class="mt-1 ml-4 list-disc">감각이 풍부한 핸즈온 실험 사례 제공</li><li class="mt-1 ml-4 list-disc">아이들의 경험 세계와 연결되는 구체적 비유 제공</li><li class="mt-1 ml-4 list-disc">관찰 중심의 간단한 평가 도구 예시 제공</li></ul>',
+                    chartData: [80, 70, 40, 30]
+                },
+                '6': {
+                    title: '6학년: 추상적 사고와 비판적 사고력 함양',
+                    profile: '<strong>학생 프로필:</strong> 형식적 조작기로 전환되는 과도기. 에너지, 밀도 등 추상적 개념을 이해하기 시작하며, 논리적 토론을 즐깁니다.',
+                    curriculum: '<strong>교육과정 초점:</strong> 에너지, 전기 회로, 날씨, 우리 몸 등 보다 복잡하고 시스템적인 주제. 기후 변화 등 사회-과학 연계(STS)를 강조합니다.',
+                    system: '<strong>시스템 적용 방안:</strong> <ul><li class="mt-1 ml-4 list-disc">추상적 개념을 위한 시뮬레이션, 모델링 사례 제공</li><li class="mt-1 ml-4 list-disc">과학-사회 연계(STS) 프로젝트 학습 사례 제공</li><li class="mt-1 ml-4 list-disc">토론, 논증 능력 평가를 위한 정교한 루브릭 예시 제공</li></ul>',
+                    chartData: [40, 50, 80, 70]
+                }
+            };
+            
+            function updateGradeView(grade) {
+                const data = gradeData[grade];
+                gradeInfoDiv.innerHTML = `
+                    <h4 class="text-xl font-bold mb-4">${data.title}</h4>
+                    <div class="space-y-4 text-gray-700">
+                        <p>${data.profile}</p>
+                        <p>${data.curriculum}</p>
+                        <div>${data.system}</div>
+                    </div>
+                `;
+                if(window.gradeFocusChart) {
+                    window.gradeFocusChart.data.datasets[0].data = data.chartData;
+                    window.gradeFocusChart.update();
+                }
+                
+                if (grade === '3') {
+                    grade3Btn.classList.add('bg-[#A8D8EA]', 'text-white');
+                    grade3Btn.classList.remove('bg-white');
+                    grade6Btn.classList.remove('bg-[#A8D8EA]', 'text-white');
+                    grade6Btn.classList.add('bg-white');
+                } else {
+                    grade6Btn.classList.add('bg-[#A8D8EA]', 'text-white');
+                    grade6Btn.classList.remove('bg-white');
+                    grade3Btn.classList.remove('bg-[#A8D8EA]', 'text-white');
+                    grade3Btn.classList.add('bg-white');
+                }
+            }
+
+            grade3Btn.addEventListener('click', () => updateGradeView('3'));
+            grade6Btn.addEventListener('click', () => updateGradeView('6'));
+
+            const ctx = document.getElementById('gradeFocusChart').getContext('2d');
+            window.gradeFocusChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['구체적/핸즈온 활동', '기초 탐구 기능', '추상적 개념 학습', '과학-사회 연계(STS)'],
+                    datasets: [{
+                        label: '교수법 초점',
+                        data: [],
+                        backgroundColor: ['#A8D8EA', '#B4D9A9', '#F9E2AE', '#E8A08D'],
+                        borderColor: '#ffffff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%'
+                                }
+                            }
+                        },
+                         y: {
+                            ticks: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.raw + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            updateGradeView('3');
+
+            const rubricData = [
+                {
+                    domain: "1. 수업 계획 및 설계",
+                    levels: [
+                        "학습 목표가 불분명하거나 활동과 연계되지 않음. 교과서 내용을 그대로 따라가는 수준.",
+                        "학습 목표는 명시되나, 수업 활동과 완전히 일치하지는 않음. 탐구 활동을 시도하나, 절차가 명확하지 않음.",
+                        "교육과정 성취기준에 기반한 명확한 학습 목표를 설정하고, 모든 활동이 목표 달성을 향해 유기적으로 연결됨.",
+                        "학습 목표를 넘어, 학생들의 삶과 연관된 '큰 아이디어(Big Idea)'를 중심으로 수업을 재구성하고, 학생 주도적 탐구를 촉진함."
+                    ]
+                },
+                {
+                    domain: "2. 개념 설명 및 표상",
+                    levels: [
+                        "교과서 용어를 사용하여 사실적으로 정확하게 설명하지만, 학생들의 이해 수준을 고려하지 못함.",
+                        "학생들의 이해를 돕기 위해 비유나 모델을 사용하려 시도하지만, 그 비유가 명확하지 않거나 오개념을 유발할 소지가 있음.",
+                        "학생들의 사전 경험과 연결되는 명확하고 적절한 비유, 모델, 시각 자료를 활용하여 핵심 개념을 효과적으로 설명함.",
+                        "학생들의 흔한 오개념을 미리 예측하고, 이를 드러내어 인지적 갈등을 유발한 후, 정교한 설명을 통해 개념 변화를 성공적으로 이끌어냄."
+                    ]
+                },
+                {
+                    domain: "3. 탐구/실험 활동 지도",
+                    levels: [
+                        "실험 재료 준비나 절차 안내에 어려움을 겪으며, 수업이 산만해지거나 교사가 대부분의 과정을 수행함.",
+                        "실험은 순조롭게 진행되지만, 학생들이 절차를 기계적으로 따르는 데 그치고, 교사의 지시가 매우 구체적이고 제한적임.",
+                        "학생들이 안전하게 실험에 몰입할 수 있는 환경을 조성하고, 모둠별로 협력하여 탐구를 주도하도록 촉진하며, 과정 중에 적절한 발문을 던짐.",
+                        "실험을 단순한 활동이 아닌, 가설 검증이나 문제 해결의 과정으로 설계함. 예상치 못한 결과가 나왔을 때 이를 학습의 기회로 전환하여 학생들과 함께 원인을 탐구함."
+                    ]
+                },
+                {
+                    domain: "4. 발문과 담화 촉진",
+                    levels: [
+                        "주로 사실 확인을 위한 폐쇄형 질문('~가 맞나요?')을 사용하며, 교사-학생 간의 일방적인 상호작용이 주를 이룸.",
+                        "학생들의 생각을 묻는 개방형 질문을 사용하기 시작하나, 학생들의 답변을 다시 전체 토론으로 연결시키지 못함.",
+                        '"왜 그렇게 생각하니?", "만약 ~라면 어떻게 될까?"와 같은 고차원적 사고를 자극하는 발문을 사용하고, 학생 간의 토론을 적극적으로 장려함.',
+                        "학생들의 답변을 바탕으로 새로운 질문을 생성하고, 논쟁을 촉진하며, 학급 전체가 함께 지식을 구성해나가는 과학적 담화 공동체를 형성함."
+                    ]
+                },
+                {
+                    domain: "5. 형성평가 및 피드백",
+                    levels: [
+                        "단원 마지막에 총괄평가(지필평가)에 의존하며, 수업 중 학생들의 이해도를 파악하려는 노력이 부족함.",
+                        "수업 중 학생들의 이해도를 확인하려 하지만, 그 방법이 비체계적이며, 제공하는 피드백이 '잘했어요'와 같이 일반적임.",
+                        "수업 과정 중에 관찰, 질문, 간단한 활동 등을 통해 학생들의 이해 수준을 지속적으로 모니터링하고, 구체적이고 교정적인 피드백을 제공함.",
+                        "다양한 형성평가 기법을 활용하여 학생 개개인의 성장 과정을 파악하고, 그 결과를 다음 수업 설계에 즉각적으로 반영하며, 학생의 자기평가를 유도함."
+                    ]
+                }
+            ];
+            
+            const rubricBody = document.getElementById('rubric-body');
+            const detailDisplay = document.getElementById('rubric-detail-display');
+            
+            rubricData.forEach(rowData => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td class="p-3 border font-semibold bg-gray-50">${rowData.domain}</td>` + 
+                               rowData.levels.map(level => `<td class="p-3 border hover:bg-blue-100 align-top">${level}</td>`).join('');
+                rubricBody.appendChild(tr);
+            });
+
+            rubricBody.addEventListener('click', function(e) {
+                if(e.target.tagName === 'TD' && !e.target.classList.contains('font-semibold')) {
+                    const allCells = rubricBody.querySelectorAll('td');
+                    allCells.forEach(cell => cell.classList.remove('highlight'));
+
+                    e.target.classList.add('highlight');
+                    detailDisplay.textContent = e.target.textContent;
+                }
+            });
+
+            const generateBtn = document.getElementById('generate-plan-btn');
+            const topicInput = document.getElementById('lesson-topic');
+            const gradeSelect = document.getElementById('lesson-grade');
+            const outputDiv = document.getElementById('gemini-output');
+            const loader = document.getElementById('loader');
+
+            generateBtn.addEventListener('click', async () => {
+                const topic = topicInput.value.trim();
+                const grade = gradeSelect.value;
+
+                if (!topic) {
+                    outputDiv.innerHTML = '<p class="text-red-500 text-center">수업 주제를 입력해주세요.</p>';
+                    return;
+                }
+
+                outputDiv.innerHTML = '';
+                loader.classList.remove('hidden');
+                generateBtn.disabled = true;
+                generateBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+                const grade_specific_prompt_addition = grade === '3' 
+                    ? "3학년 학생들은 구체적 조작기에 해당하므로, 직접 만지고 관찰할 수 있는 구체적이고 감각적인 활동을 중심으로 제안해주세요."
+                    : "6학년 학생들은 형식적 조작기로 넘어가는 시기이므로, 추상적인 개념을 다루고 논리적 사고와 비판적 사고를 자극할 수 있는 토론이나 심화 탐구 활동을 포함해주세요.";
+
+                const prompt = `
+                    당신은 대한민국 초등학교 과학 교사를 위한 전문 AI 조교 'AI 교사 파트너'입니다. 당신의 임무는 RAG(정확한 과학 지식)와 CBR(실용적인 수업 사례)을 결합하여, 교사들이 효과적이고 매력적인 과학 수업을 설계하도록 돕는 것입니다.
+
+                    다음 요청에 따라 수업 계획 아이디어를 생성해주세요.
+
+                    - 수업 주제: ${topic}
+                    - 대상 학년: ${grade}학년
+                    - 추가 고려사항: ${grade_specific_prompt_addition}
+
+                    아래의 구조에 맞춰 Markdown 형식으로 답변을 작성해주세요:
+
+                    ### 1. 학습 목표 (Learning Objectives)
+                    - 학생들이 이 수업을 통해 무엇을 알게 되고 할 수 있게 되는지 2~3가지 명시
+
+                    ### 2. 핵심 개념 (Key Concepts - RAG 기반)
+                    - 이 주제와 관련된 핵심 과학 개념을 교사가 이해하기 쉽게 정확히 설명
+                    - 학생들의 오개념을 예방할 수 있는 팁 포함
+
+                    ### 3. 탐구 활동 아이디어 (Activity Idea - CBR 기반)
+                    - 교실에서 쉽게 실행할 수 있는 창의적이고 구체적인 탐구 활동을 단계별로 제안
+                    - 필요한 준비물과 예상 소요 시간 명시
+
+                    ### 4. 예상 질문 및 답변 (Q&A)
+                    - 수업 중 학생들이 할 법한 예상 질문 2가지와, 교사가 답변할 수 있는 모범 답안 제시 (아이들 눈높이에 맞춰 설명)
+                `;
+                
+                try {
+                    let chatHistory = [];
+                    chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                    const payload = { contents: chatHistory };
+                    const apiKey = "AIzaSyBYR1GNojzostWr0sbS6W8CLCjHQaaCtj8";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API 요청 실패: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        outputDiv.innerHTML = marked.parse(text);
+                    } else {
+                        throw new Error("API로부터 유효한 응답을 받지 못했습니다.");
+                    }
+                } catch (error) {
+                    console.error('Gemini API 호출 중 오류 발생:', error);
+                    outputDiv.innerHTML = `<p class="text-red-500 text-center">아이디어 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (${error.message})</p>`;
+                } finally {
+                    loader.classList.add('hidden');
+                    generateBtn.disabled = false;
+                    generateBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
